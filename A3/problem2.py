@@ -40,7 +40,6 @@ def torch2numpy(tensor):
     array=tensor.numpy().transpose(1, 2, 0)
     return array
 
-
 def load_data(im1_filename, im2_filename, flo_filename):
     """Loading the data. Returns 4D tensors. You may want to use the provided helper functions.
 
@@ -69,7 +68,6 @@ def load_data(im1_filename, im2_filename, flo_filename):
     flow_gt = numpy2torch(flow_gt)
 
     return tensor1, tensor2, flow_gt
-
 
 def evaluate_flow(flow, flow_gt):
     """Evaluate the average endpoint error w.r.t the ground truth flow_gt.
@@ -139,7 +137,7 @@ def visualize_warping_practice(im1, im2, flow_gt):
 
 
 def warp_image(im, flow):
-    """ Warps given image according to the given optical flow.
+    """ Warps given image(im) according to the given optical flow.
 
     Args:
         im: torch tensor of shape (B, C, H, W)
@@ -155,12 +153,11 @@ def warp_image(im, flow):
 
     B, C, H, W = im.size()
     
-
-    # make grid 
+    # make grid (store qarped image)
     grid_y, grid_x = torch.meshgrid(torch.arange(0, H), torch.arange(0, W))
     grid = torch.stack((grid_x, grid_y), 2).float()
     grid = grid.unsqueeze(0).repeat(B, 1, 1, 1).to(flow.device)  # (B, H, W, 2)
-    grid = grid + flow.permute(0, 2, 3, 1)  # flow를 추가하여 새로운 grid 생성
+    grid = grid + flow.permute(0, 2, 3, 1) #(B, C, H, W)->(B, H, W, C)
 
     grid[..., 0] = 2.0 * grid[..., 0] / (W - 1) - 1.0
     grid[..., 1] = 2.0 * grid[..., 1] / (H - 1) - 1.0
@@ -182,7 +179,6 @@ def energy_hs(im1, im2, flow, lambda_hs):
     Returns:
         energy: torch tensor scalar
     """
-    # 이미지 밝기 일관성 에너지 계산
     u = flow[:, 0, :, :]
     v = flow[:, 1, :, :]
 
@@ -204,18 +200,17 @@ def energy_hs(im1, im2, flow, lambda_hs):
     new_y = new_y[valid].view(B, -1)
     im2_warped = tf.grid_sample(im2, torch.stack((new_y, new_x), dim=-1).unsqueeze(0).unsqueeze(0), align_corners=True)
 
-    # bright constancy E
-    term1 = ((im1 - im2_warped) ** 2).sum()
+    # bright constancy E1
+    E1 = ((im1 - im2_warped) ** 2).sum()
 
-    # gradient
+    # gradient E2
     flow_dx = tf.pad(flow[:, :, :, 1:] - flow[:, :, :, :-1], (0, 1), 'replicate')
     flow_dy = tf.pad(flow[:, :, 1:, :] - flow[:, :, :-1, :], (0, 0, 0, 1), 'replicate')
 
-    # 쌍항 MRF 에너지
-    term2 = lambda_hs * (flow_dx ** 2 + flow_dy ** 2).sum()
+    E2 = lambda_hs * (flow_dx ** 2 + flow_dy ** 2).sum()
 
     # total E
-    energy = term1 + term2
+    energy = E1+E2
     return energy
 
 
@@ -241,7 +236,6 @@ def estimate_flow(im1, im2, flow_gt, lambda_hs, learning_rate, num_iter):
     # 흐름 초기화 (제로 텐서)
     flow = torch.zeros(B, 2, H, W, requires_grad=True)
 
-    # 옵티마이저 설정 (SGD)
     optimizer = optim.SGD([flow], lr=learning_rate)
 
     for i in range(num_iter):
