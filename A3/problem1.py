@@ -3,6 +3,8 @@ import gco
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.sparse import csr_matrix
+import gco
+
 np.random.seed(seed=2022)
 
 def mrf_denoising_nllh(x, y, sigma_noise):
@@ -16,12 +18,13 @@ def mrf_denoising_nllh(x, y, sigma_noise):
       Returns:
         A `nd.array` with dtype `float32/float64`.
     """
+    nllh = (1 / (2 * sigma_noise**2)) * (x - y)**2
     assert (nllh.dtype in [np.float32, np.float64])
     return nllh
 
 def edges4connected(height, width):
     """Construct edges for 4-connected neighborhood MRF.
-    The output representation is such that output[i] specifies two indices
+    The output representation is s.t output[i] specifies two indices
     of connected nodes in an MRF stored with row-major ordering.
 
       Args:
@@ -30,6 +33,18 @@ def edges4connected(height, width):
       Returns:
         A `nd.array` with dtype `int32/int64` of size |E| x 2.
     """
+    edges = []
+    for i in range(height):
+        for j in range(width):
+            idx = i * width + j
+            # right
+            if j + 1 < width: # if the current pixel is not the last column
+                edges.append([idx, idx + 1])  
+            # bottom
+            if i + 1 < height:
+                edges.append([idx, idx + width])  
+    edges = np.array(edges, dtype=np.int64)
+
     assert (edges.shape[0] == 2 * (height*width) - (height+width) and edges.shape[1] == 2)
     assert (edges.dtype in [np.int32, np.int64])
     return edges
@@ -58,12 +73,25 @@ def alpha_expansion(noisy, init, edges, candidate_pixel_values, s, lmbda):
       Returns:
         A `nd.array` of type `int32`. Assigned labels minimizing the costs.
     """
+
     assert (np.equal(denoised.shape, init.shape).all())
     assert (denoised.dtype == init.dtype)
     return denoised
+  
 
 def compute_psnr(img1, img2):
+    
     """Computes PSNR b/w img1 and img2"""
+    
+    H, W = img1.shape
+    vmax = 255.0
+    psnr = 10 * np.log10((vmax ** 2) / mse)
+    
+    mse = np.sum((img1 - img2) ** 2) / (H * W)
+    
+    if mse == 0:
+        return float('inf')
+    
     return psnr
 
 def show_images(i0, i1):
