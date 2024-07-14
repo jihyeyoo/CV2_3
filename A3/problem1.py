@@ -16,6 +16,7 @@ def mrf_denoising_nllh(x, y, sigma_noise):
       Returns:
         A `nd.array` with dtype `float32/float64`.
     """
+    nllh = 0.5 * ((x - y) ** 2) / (sigma_noise ** 2)
     assert (nllh.dtype in [np.float32, np.float64])
     return nllh
 
@@ -30,6 +31,14 @@ def edges4connected(height, width):
       Returns:
         A `nd.array` with dtype `int32/int64` of size |E| x 2.
     """
+    edges = []
+    for i in range(height):
+        for j in range(width):
+            if i < height - 1:
+                edges.append([i * width + j, (i + 1) * width + j])
+            if j < width - 1:
+                edges.append([i * width + j, i * width + (j + 1)])
+    edges = np.array(edges, dtype=np.int64)
     assert (edges.shape[0] == 2 * (height*width) - (height+width) and edges.shape[1] == 2)
     assert (edges.dtype in [np.int32, np.int64])
     return edges
@@ -58,12 +67,47 @@ def alpha_expansion(noisy, init, edges, candidate_pixel_values, s, lmbda):
       Returns:
         A `nd.array` of type `int32`. Assigned labels minimizing the costs.
     """
+    current_labels = init.copy()
+    height, width = noisy.shape
+
+    while True:
+        changed = False
+        for alpha in candidate_pixel_values:
+            unary_costs = mrf_denoising_nllh(current_labels, noisy, s)
+            unary_costs_flat = unary_costs.flatten()
+
+            pairwise_costs = csr_matrix((len(edges), len(candidate_pixel_values)), dtype=np.float32)
+            for edge_idx, (p, q) in enumerate(edges):
+                if current_labels.flat[p] != alpha:
+                    pairwise_costs[edge_idx, alpha] = lmbda
+                if current_labels.flat[q] != alpha:
+                    pairwise_costs[edge_idx, alpha] = lmbda
+
+            print(type(pairwise_costs), pairwise_costs.shape)
+            print(type(unary_costs_flat), unary_costs_flat.shape)
+
+            new_labels = gco.graphcut(pairwise_costs, unary_costs_flat)
+            new_labels = new_labels.reshape(height, width)
+
+            if not np.array_equal(current_labels, new_labels):
+              current_labels = new_labels
+              changed = True
+
+        if not changed:
+            break
+        
+    denoised = current_labels.astype(init.dtype)
     assert (np.equal(denoised.shape, init.shape).all())
     assert (denoised.dtype == init.dtype)
     return denoised
 
 def compute_psnr(img1, img2):
     """Computes PSNR b/w img1 and img2"""
+    mse = np.mean((img1 - img2) ** 2)
+    if mse == 0:
+        return float('inf')
+    pixel_max = 255.0
+    psnr = 10 * math.log10((pixel_max ** 2) / mse)
     return psnr
 
 def show_images(i0, i1):
@@ -71,7 +115,7 @@ def show_images(i0, i1):
     Visualize estimate and ground truth in one Figure.
     Only show the area for valid gt values (>0).
     """
-
+  
     # Crop images to valid ground truth area
     row, col = np.nonzero(i0)
     plt.figure()

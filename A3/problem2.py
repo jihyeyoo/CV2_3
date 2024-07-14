@@ -25,7 +25,7 @@ def numpy2torch(array):
     Returns:
         tensor: torch tensor of shape (C, H, W)
     """
-
+    tensor = torch.tensor(array.transpose(2, 0, 1))
     return tensor
 
 
@@ -38,7 +38,7 @@ def torch2numpy(tensor):
     Returns:
         array: numpy array of shape (H, W, C)
     """
-    
+    array = tensor.numpy().transpose(1, 2, 0)
     return array
 
 
@@ -55,6 +55,13 @@ def load_data(im1_filename, im2_filename, flo_filename):
         tensor2: torch tensor of shape (B, C, H, W)
         flow_gt: torch tensor of shape (B, C, H, W)
     """
+    im1 = rgb2gray(read_image(im1_filename))
+    im2 = rgb2gray(read_image(im2_filename))
+    flow_gt = read_flo(flo_filename)
+
+    tensor1 = numpy2torch(im1).unsqueeze(0).float()
+    tensor2 = numpy2torch(im2).unsqueeze(0).float()
+    flow_gt = numpy2torch(flow_gt).unsqueeze(0).float()
 
     return tensor1, tensor2, flow_gt
 
@@ -70,7 +77,10 @@ def evaluate_flow(flow, flow_gt):
     Returns:
         aepe: torch tensor scalar 
     """
-
+    valid = (flow_gt[:, 0, :, :] < 1e9) & (flow_gt[:, 1, :, :] < 1e9)
+    diff = flow - flow_gt
+    epe = torch.sqrt(diff[:, 0, :, :] ** 2 + diff[:, 1, :, :] ** 2)
+    aepe = torch.mean(epe[valid])
     return aepe
 
 
@@ -85,6 +95,22 @@ def visualize_warping_practice(im1, im2, flow_gt):
     Returns:
 
     """
+    im2_warp = warp_image(im2, flow_gt)
+    im1_np = torch2numpy(im1[0])
+    im2_warp_np = torch2numpy(im2_warp[0])
+    diff = np.abs(im1_np - im2_warp_np)
+
+    plt.figure()
+    plt.subplot(1, 3, 1)
+    plt.imshow(im1_np, cmap='gray')
+    plt.title('Image 1')
+    plt.subplot(1, 3, 2)
+    plt.imshow(im2_warp_np, cmap='gray')
+    plt.title('Warped Image 2')
+    plt.subplot(1, 3, 3)
+    plt.imshow(diff, cmap='gray')
+    plt.title('Difference')
+    plt.show()
 
     return
 
@@ -99,7 +125,17 @@ def warp_image(im, flow):
     Returns:
         x_warp: torch tensor of shape (B, C, H, W)
     """
-    
+    B, C, H, W = im.size()
+    grid_y, grid_x = torch.meshgrid(torch.arange(0, H), torch.arange(0, W))
+    grid = torch.stack((grid_x, grid_y), 2).float().to(im.device)
+    flow = flow.permute(0, 2, 3, 1)
+    grid = grid.unsqueeze(0).expand(B, -1, -1, -1) + flow
+
+    grid[:, :, :, 0] = 2.0 * grid[:, :, :, 0] / (W - 1) - 1.0
+    grid[:, :, :, 1] = 2.0 * grid[:, :, :, 1] / (H - 1) - 1.0
+
+    x_warp = tf.grid_sample(im, grid, align_corners=True)
+
     return x_warp
 
 
@@ -115,6 +151,13 @@ def energy_hs(im1, im2, flow, lambda_hs):
     Returns:
         energy: torch tensor scalar
     """
+    im2_warp = warp_image(im2, flow)
+    brightness_constancy = (im2_warp - im1) ** 2
+    u, v = flow[:, 0, :, :], flow[:, 1, :, :]
+    u_dx, u_dy = torch.gradient(u)
+    v_dx, v_dy = torch.gradient(v)
+    smoothness = u_dx ** 2 + u_dy ** 2 + v_dx ** 2 + v_dy ** 2
+    energy = torch.sum(brightness_constancy) + lambda_hs * torch.sum(smoothness)
 
     return energy
 
@@ -136,7 +179,31 @@ def estimate_flow(im1, im2, flow_gt, lambda_hs, learning_rate, num_iter):
     Returns:
         aepe: torch tensor scalar
     """
-    
+    flow = torch.zeros_like(flow_gt, requires_grad=True)
+    optimizer = optim.SGD([flow], lr=learning_rate)
+
+    initial_aepe = evaluate_flow(flow, flow_gt)
+    print(f'Initial AEPE: {initial_aepe.item()}')
+
+    for i in range(num_iter):
+        optimizer.zero_grad()
+        energy = energy_hs(im1, im2, flow, lambda_hs)
+        energy.backward()
+        optimizer.step()
+
+        if i % 50 == 0 or i == num_iter - 1:
+            current_aepe = evaluate_flow(flow, flow_gt)
+            print(f'Iteration {i + 1}/{num_iter}, AEPE: {current_aepe.item()}')
+
+    aepe = evaluate_flow(flow, flow_gt)
+    print(f'Final AEPE: {aepe.item()}')
+
+    flow_rgb = flow2rgb(torch2numpy(flow[0].detach()))
+    plt.figure()
+    plt.imshow(flow_rgb)
+    plt.title('Estimated Flow')
+    plt.show()
+
     return aepe
 
 # Example usage in main()
