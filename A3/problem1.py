@@ -49,6 +49,26 @@ def my_sigma():
 def my_lmbda():
     return 5
 
+def generate_unary(noisy, denoised, alpha, s):
+    target_img = np.full(denoised.shape, alpha)
+    unary = np.stack([
+        mrf_denoising_nllh(noisy, denoised, s).flatten(),
+        mrf_denoising_nllh(noisy, target_img, s).flatten()
+    ])
+    return unary
+
+def generate_pairwise(img, edges, lmbda):
+    row_ind = []
+    col_ind = []
+
+    for e in edges:
+        if img[e[0]] != img[e[1]]:
+            row_ind.append(e[0])
+            col_ind.append(e[1])
+    data = np.full(len(row_ind), lmbda)
+    pairwise = csr_matrix((data, (row_ind, col_ind)), shape=(img.size, img.size))
+    return pairwise
+
 def alpha_expansion(noisy, init, edges, candidate_pixel_values, s, lmbda):
     """ Run alpha-expansion algorithm.
 
@@ -67,39 +87,26 @@ def alpha_expansion(noisy, init, edges, candidate_pixel_values, s, lmbda):
       Returns:
         A `nd.array` of type `int32`. Assigned labels minimizing the costs.
     """
-    current_labels = init.copy()
     height, width = noisy.shape
+    denoised = init.flatten()
+    noisy_flat = noisy.flatten()
 
-    while True:
-        changed = False
-        for alpha in candidate_pixel_values:
-            unary_costs = mrf_denoising_nllh(current_labels, noisy, s)
-            unary_costs_flat = unary_costs.flatten()
+    for alpha in candidate_pixel_values:
+        unary = generate_unary(noisy_flat, denoised, alpha, s)
+        pairwise = generate_pairwise(denoised, edges, lmbda)
 
-            pairwise_costs = csr_matrix((len(edges), len(candidate_pixel_values)), dtype=np.float32)
-            for edge_idx, (p, q) in enumerate(edges):
-                if current_labels.flat[p] != alpha:
-                    pairwise_costs[edge_idx, alpha] = lmbda
-                if current_labels.flat[q] != alpha:
-                    pairwise_costs[edge_idx, alpha] = lmbda
+        labels = gco.graphcut(unary, pairwise)
 
-            print(type(pairwise_costs), pairwise_costs.shape)
-            print(type(unary_costs_flat), unary_costs_flat.shape)
-
-            new_labels = gco.graphcut(pairwise_costs, unary_costs_flat)
-            new_labels = new_labels.reshape(height, width)
-
-            if not np.array_equal(current_labels, new_labels):
-              current_labels = new_labels
-              changed = True
-
-        if not changed:
+        if labels.sum() == 0:
             break
-        
-    denoised = current_labels.astype(init.dtype)
+
+        denoised[labels == 1] = alpha
+
+    denoised = denoised.reshape((height, width))
     assert (np.equal(denoised.shape, init.shape).all())
     assert (denoised.dtype == init.dtype)
     return denoised
+
 
 def compute_psnr(img1, img2):
     """Computes PSNR b/w img1 and img2"""
