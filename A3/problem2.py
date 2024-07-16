@@ -124,7 +124,7 @@ def visualize_warping_practice(im1, im2, flow_gt):
 
     im1_np = torch2numpy(im1[0])
     im2_w_np = torch2numpy(im2_w[0])
-    diff = im2_w_np - im1_np
+    diff = np.abs(im2_w_np - im1_np)
 
     plt.figure()
     plt.subplot(1, 3, 1)
