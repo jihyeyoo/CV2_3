@@ -153,7 +153,7 @@ def energy_hs(im1, im2, flow, lambda_hs):
     """
     im2_warp = warp_image(im2, flow)
     brightness_constancy = (im2_warp - im1) ** 2
-    u, v = flow[:, 0, :, :], flow[:, 1, :, :]
+    u, v = flow[0, 0, :, :], flow[0, 1, :, :]
     u_dx, u_dy = torch.gradient(u)
     v_dx, v_dy = torch.gradient(v)
     smoothness = u_dx ** 2 + u_dy ** 2 + v_dx ** 2 + v_dy ** 2
