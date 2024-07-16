@@ -65,7 +65,7 @@ def generate_unary_and_pairwise(noisy, denoised, alpha, edges, lmbda):
     data = np.full(len(pairwise_row), lmbda)
     pairwise = csr_matrix((data, (pairwise_row, pairwise_col)), shape=(denoised.size, denoised.size))
 
-    # unary 
+    # unary (2xN)
     unary = []
     unary.append(mrf_denoising_nllh(noisy, denoised, my_sigma()).flatten())
 

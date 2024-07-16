@@ -153,7 +153,7 @@ def warp_image(im, flow):
 
     B, C, H, W = im.size()
     
-    # make grid (store qarped image)
+    # make grid (store warped image)
     grid_y, grid_x = torch.meshgrid(torch.arange(0, H), torch.arange(0, W))
     grid = torch.stack((grid_x, grid_y), 2).float()
     grid = grid.unsqueeze(0).repeat(B, 1, 1, 1).to(flow.device)  # (B, H, W, 2)
