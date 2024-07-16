@@ -3,7 +3,6 @@ import gco
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.sparse import csr_matrix
-import gco
 
 np.random.seed(seed=2022)
 
@@ -19,12 +18,13 @@ def mrf_denoising_nllh(x, y, sigma_noise):
         A `nd.array` with dtype `float32/float64`.
     """
     nllh = (1 / (2 * sigma_noise**2)) * (x - y)**2
+
     assert (nllh.dtype in [np.float32, np.float64])
     return nllh
 
 def edges4connected(height, width):
     """Construct edges for 4-connected neighborhood MRF.
-    The output representation is s.t output[i] specifies two indices
+    The output representation is such that output[i] specifies two indices
     of connected nodes in an MRF stored with row-major ordering.
 
       Args:
@@ -55,43 +55,54 @@ def my_sigma():
 def my_lmbda():
     return 5
 
+def generate_unary_and_pairwise(noisy, denoised, alpha, edges, lmbda):
+    edge_idx = np.array(edges)
+    different_pixels = denoised[edge_idx[:, 0]] != denoised[edge_idx[:, 1]]
+    pairwise_row = edge_idx[different_pixels, 0]
+    pairwise_col = edge_idx[different_pixels, 1]
+
+    # pairwise
+    data = np.full(len(pairwise_row), lmbda)
+    pairwise = csr_matrix((data, (pairwise_row, pairwise_col)), shape=(denoised.size, denoised.size))
+
+    # unary 
+    unary = []
+    unary.append(mrf_denoising_nllh(noisy, denoised, my_sigma()).flatten())
+
+    target_img = np.full_like(denoised, alpha)
+    unary.append(mrf_denoising_nllh(noisy, target_img, my_sigma()).flatten())
+
+    return np.array(unary), pairwise
+
+
 def alpha_expansion(noisy, init, edges, candidate_pixel_values, s, lmbda):
-    """ Run alpha-expansion algorithm.
+    denoised = init.flatten()
+    noisy = noisy.flatten()
+    
+    for alpha in candidate_pixel_values:
+        unary, pairwise = generate_unary_and_pairwise(noisy, denoised, alpha, edges, lmbda)
+        labels = gco.graphcut(unary, pairwise)
 
-      Args:
-        noisy: Given noisy grayscale image.
-        init: Image for denoising initilisation
-        edges: Given neighboor of MRF.
-        candidate_pixel_values: Set of labels to consider
-        s: sigma for likelihood estimation
-        lmbda: Regularization parameter for Potts model.
+        if labels.sum() == 0:
+            break
 
-      Runs through the set of candidates and iteratively expands a label.
-      If there have been recorded changes, re-run through the complete set of candidates.
-      Stops, if there are no changes in the labelling.
+        denoised[labels == 1] = alpha
 
-      Returns:
-        A `nd.array` of type `int32`. Assigned labels minimizing the costs.
-    """
-
+    denoised = denoised.reshape(init.shape)
     assert (np.equal(denoised.shape, init.shape).all())
     assert (denoised.dtype == init.dtype)
     return denoised
-  
+
 
 def compute_psnr(img1, img2):
-    
-    """Computes PSNR b/w img1 and img2"""
-    
-    H, W = img1.shape
+    """Computes PSNR between img1 and img2"""
     vmax = 255.0
-    psnr = 10 * np.log10((vmax ** 2) / mse)
-    
-    mse = np.sum((img1 - img2) ** 2) / (H * W)
+    mse = np.sum((img1 - img2) ** 2) / (img1.size)
     
     if mse == 0:
         return float('inf')
     
+    psnr = 10 * np.log10((vmax ** 2) / mse)
     return psnr
 
 def show_images(i0, i1):
