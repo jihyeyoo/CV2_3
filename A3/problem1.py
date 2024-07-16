@@ -61,7 +61,7 @@ def generate_unary_and_pairwise(noisy, denoised, alpha, edges, lmbda):
     pairwise_row = edge_idx[different_pixels, 0]
     pairwise_col = edge_idx[different_pixels, 1]
 
-    # pairwise
+    # pairwise potential
     data = np.full(len(pairwise_row), lmbda)
     pairwise = csr_matrix((data, (pairwise_row, pairwise_col)), shape=(denoised.size, denoised.size))
 
@@ -73,7 +73,6 @@ def generate_unary_and_pairwise(noisy, denoised, alpha, edges, lmbda):
     unary.append(mrf_denoising_nllh(noisy, target_img, my_sigma()).flatten())
 
     return np.array(unary), pairwise
-
 
 def alpha_expansion(noisy, init, edges, candidate_pixel_values, s, lmbda):
     denoised = init.flatten()
@@ -93,9 +92,7 @@ def alpha_expansion(noisy, init, edges, candidate_pixel_values, s, lmbda):
     assert (denoised.dtype == init.dtype)
     return denoised
 
-
 def compute_psnr(img1, img2):
-    """Computes PSNR between img1 and img2"""
     vmax = 255.0
     mse = np.sum((img1 - img2) ** 2) / (img1.size)
     
