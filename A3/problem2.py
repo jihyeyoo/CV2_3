@@ -233,7 +233,7 @@ def estimate_flow(im1, im2, flow_gt, lambda_hs, learning_rate, num_iter):
     """
     B, C, H, W = im1.shape
 
-    # 흐름 초기화 (제로 텐서)
+    # flow initailiztion (zero tensor)
     flow = torch.zeros(B, 2, H, W, requires_grad=True)
 
     optimizer = optim.SGD([flow], lr=learning_rate)
@@ -248,10 +248,10 @@ def estimate_flow(im1, im2, flow_gt, lambda_hs, learning_rate, num_iter):
             aepe = evaluate_flow(flow, flow_gt)
             print(f'Iteration {i+1}/{num_iter}, Energy: {energy.item()}, AEPE: {aepe.item()}')
 
-    # 최종 AEPE 계산
+    # final AEPE
     aepe = evaluate_flow(flow, flow_gt)
 
-    # 흐름 시각화
+    # visualize flow
     flow_rgb = flow2rgb(flow.detach().cpu().numpy())
     plt.figure(figsize=(10, 5))
     plt.subplot(1, 2, 1)
