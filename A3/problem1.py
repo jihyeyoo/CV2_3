@@ -1,3 +1,11 @@
+'''
+Authors:
+Group #13
+- Jinjoo Ha (jinjoo.ha@stud.tu-darmstadt.de)
+- Jihye Yoo (gudong0918@ewhain.net)
+- Hyewon Joo (joohw1004@ewhain.net)
+'''
+
 import math
 import gco
 import matplotlib.pyplot as plt
@@ -16,6 +24,7 @@ def mrf_denoising_nllh(x, y, sigma_noise):
       Returns:
         A `nd.array` with dtype `float32/float64`.
     """
+    nllh = 0.5 * ((x - y) ** 2) / (sigma_noise ** 2)
     assert (nllh.dtype in [np.float32, np.float64])
     return nllh
 
@@ -30,6 +39,14 @@ def edges4connected(height, width):
       Returns:
         A `nd.array` with dtype `int32/int64` of size |E| x 2.
     """
+    edges = []
+    for i in range(height):
+        for j in range(width):
+            if i < height - 1:
+                edges.append([i * width + j, (i + 1) * width + j])
+            if j < width - 1:
+                edges.append([i * width + j, i * width + (j + 1)])
+    edges = np.array(edges, dtype=np.int64)
     assert (edges.shape[0] == 2 * (height*width) - (height+width) and edges.shape[1] == 2)
     assert (edges.dtype in [np.int32, np.int64])
     return edges
@@ -39,6 +56,26 @@ def my_sigma():
 
 def my_lmbda():
     return 5
+
+def generate_unary(noisy, denoised, alpha, s):
+    target_img = np.full(denoised.shape, alpha)
+    unary = np.stack([
+        mrf_denoising_nllh(noisy, denoised, s).flatten(),
+        mrf_denoising_nllh(noisy, target_img, s).flatten()
+    ])
+    return unary
+
+def generate_pairwise(img, edges, lmbda):
+    row_ind = []
+    col_ind = []
+
+    for e in edges:
+        if img[e[0]] != img[e[1]]:
+            row_ind.append(e[0])
+            col_ind.append(e[1])
+    data = np.full(len(row_ind), lmbda)
+    pairwise = csr_matrix((data, (row_ind, col_ind)), shape=(img.size, img.size))
+    return pairwise
 
 def alpha_expansion(noisy, init, edges, candidate_pixel_values, s, lmbda):
     """ Run alpha-expansion algorithm.
@@ -58,20 +95,42 @@ def alpha_expansion(noisy, init, edges, candidate_pixel_values, s, lmbda):
       Returns:
         A `nd.array` of type `int32`. Assigned labels minimizing the costs.
     """
+    height, width = noisy.shape
+    denoised = init.flatten()
+    noisy_flat = noisy.flatten()
+
+    for alpha in candidate_pixel_values:
+        unary = generate_unary(noisy_flat, denoised, alpha, s)
+        pairwise = generate_pairwise(denoised, edges, lmbda)
+
+        labels = gco.graphcut(unary, pairwise)
+
+        if labels.sum() == 0:
+            break
+
+        denoised[labels == 1] = alpha
+
+    denoised = denoised.reshape((height, width))
     assert (np.equal(denoised.shape, init.shape).all())
     assert (denoised.dtype == init.dtype)
     return denoised
 
 def compute_psnr(img1, img2):
     """Computes PSNR b/w img1 and img2"""
+    mse = np.mean((img1 - img2) ** 2)
+    if mse == 0:
+        return float('inf')
+    pixel_max = 255.0
+    psnr = 10 * math.log10((pixel_max ** 2) / mse)
     return psnr
+
 
 def show_images(i0, i1):
     """
     Visualize estimate and ground truth in one Figure.
     Only show the area for valid gt values (>0).
     """
-
+  
     # Crop images to valid ground truth area
     row, col = np.nonzero(i0)
     plt.figure()
